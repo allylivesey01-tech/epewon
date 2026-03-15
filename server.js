@@ -38,11 +38,11 @@ const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || "";
 const memStore = {};
 
 async function storeGet(key) {
-  // Always return from cache first (instant)
+  // Return from memory cache first (instant after first load)
   if (memStore[key] !== undefined) return memStore[key];
-  // Then try Redis
   if (!REDIS_URL) return null;
   try {
+    // Correct Upstash REST API: GET /get/KEY
     const r = await fetch(REDIS_URL + "/get/" + encodeURIComponent(key), {
       headers: { Authorization: "Bearer " + REDIS_TOKEN }
     });
@@ -52,20 +52,26 @@ async function storeGet(key) {
       memStore[key] = parsed;
       return parsed;
     }
-  } catch(e) {}
+  } catch(e) { console.error("Redis read error:", e.message); }
   return null;
 }
 
 async function storeSet(key, val) {
-  memStore[key] = val;  // Update cache immediately
+  memStore[key] = val; // Update memory cache immediately
   if (!REDIS_URL) return;
   try {
-    await fetch(REDIS_URL + "/set/" + encodeURIComponent(key), {
+    // Correct Upstash REST API: POST /set/KEY/VALUE
+    // Value must be a JSON string encoded in the URL
+    const jsonVal = JSON.stringify(val);
+    const r = await fetch(REDIS_URL + "/set/" + encodeURIComponent(key) + "/" + encodeURIComponent(jsonVal), {
       method: "POST",
-      headers: { Authorization: "Bearer " + REDIS_TOKEN, "Content-Type": "application/json" },
-      body: JSON.stringify({ value: JSON.stringify(val) })
+      headers: { Authorization: "Bearer " + REDIS_TOKEN }
     });
-  } catch(e) { console.error("Redis write failed:", e.message); }
+    const d = await r.json();
+    if (d.result !== "OK") {
+      console.error("Redis set failed for key:", key, d);
+    }
+  } catch(e) { console.error("Redis write error:", e.message); }
 }
 
 const DEF_AUTH = { username:"admin", password:"epewon2024", ipRestriction:{ enabled:false, allowedIPs:[], blockedCountries:[], allowedCountries:[] } };
