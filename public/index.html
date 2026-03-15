@@ -680,7 +680,7 @@ input,select,textarea{font-family:var(--body)}
     <div class="ssec">
       <div class="ssec-title">Opening Greeting</div>
       <div class="fg">
-        <div class="ff full"><label>What the bot says first</label><textarea id="s-gmsg" rows="2"></textarea></div>
+        <div class="ff full"><label>What the bot says first <button type="button" onclick="aiEnhanceById('s-gmsg')" style="margin-left:8px;padding:2px 8px;background:linear-gradient(135deg,#7c4dff,#9c6ee8);color:#fff;border:none;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;vertical-align:middle">✨ AI Enhance</button></label><textarea id="s-gmsg" rows="2"></textarea></div>
         <div class="ff"><label>Timeout (seconds)</label><input type="number" id="s-gtimeout" value="10" min="5" max="60"/></div>
         <div class="ff"><label>No-input message</label><input type="text" id="s-gnoinput"/></div>
       </div>
@@ -854,8 +854,18 @@ input,select,textarea{font-family:var(--body)}
           </label>
         </div>
         <div class="cf cfg-full">
-          <label>Allowed IP Addresses (one per line)</label>
-          <textarea id="sec-ips" rows="5" style="background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text);font-size:13px;outline:none;resize:vertical;font-family:var(--mono)" placeholder="102.89.23.4&#10;41.58.0.0/16&#10;197.210.0.0/16"></textarea>
+          <label>Allowed IP Addresses — one per line (leave blank to allow all IPs)</label>
+          <textarea id="sec-ips" rows="4" style="background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text);font-size:13px;outline:none;resize:vertical;font-family:var(--mono)" placeholder="102.89.23.4&#10;41.58.0.0/16&#10;197.210.0.0/16"></textarea>
+        </div>
+        <div class="cf cfg-full">
+          <label>Block these Countries — comma separated country names (e.g. Russia, China, Iran)</label>
+          <input type="text" id="sec-blocked-countries" placeholder="e.g. Russia, China, North Korea"/>
+          <span class="note">Visitors from these countries will be blocked at login. Uses free ip-api.com geolocation.</span>
+        </div>
+        <div class="cf cfg-full">
+          <label>Allow ONLY these Countries — comma separated (leave blank to allow all countries)</label>
+          <input type="text" id="sec-allowed-countries" placeholder="e.g. Nigeria, United States, United Kingdom"/>
+          <span class="note">If set, ONLY these countries can access. Overrides the block list above.</span>
         </div>
       </div>
 
@@ -882,6 +892,15 @@ input,select,textarea{font-family:var(--body)}
     <div class="save-row">
       <button class="btn-save" onclick="saveSecurity()">💾 Save Security Settings</button>
       <span class="saved-ok" id="security-saved">✓ Saved!</span>
+    </div>
+
+    <!-- Login Logs -->
+    <div class="cfg-sec">
+      <div class="cfg-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>Login Attempts Log</span>
+        <button class="btn-danger" onclick="clearLoginLogs()" style="font-size:11px;padding:4px 10px">🗑 Clear</button>
+      </div>
+      <div id="login-logs-container"><div style="color:var(--text3);font-size:13px;padding:20px 0;text-align:center">Loading logs...</div></div>
     </div>
   </div>
 
@@ -1157,7 +1176,35 @@ function buildScriptPayload() {
   };
 }
 
+function validateScript() {
+  var errors = [];
+  var name = document.getElementById('sname').value.trim();
+  var gmsg = document.getElementById('s-gmsg').value.trim();
+  var gnoinput = document.getElementById('s-gnoinput').value.trim();
+  var success = document.getElementById('s-success').value.trim();
+  var cancel = document.getElementById('s-cancel').value.trim();
+  if (!name) errors.push('Script name is required.');
+  if (!gmsg) errors.push('Opening greeting message is required.');
+  if (!gnoinput) errors.push('No-input message is required.');
+  if (!success) errors.push('Success message is required.');
+  if (!cancel) errors.push('Cancel message is required.');
+  var cards = document.querySelectorAll('.step-card');
+  if (!cards.length) errors.push('You need at least one collection step.');
+  Array.from(cards).forEach(function(card, i) {
+    var msg = card.querySelector('.step-msg').value.trim();
+    var digits = parseInt(card.querySelector('.step-digits').value);
+    if (!msg) errors.push('Step ' + (i+1) + ': message is required.');
+    if (!digits || digits < 1 || digits > 20) errors.push('Step ' + (i+1) + ': max digits must be between 1 and 20.');
+  });
+  return errors;
+}
+
 function saveScript() {
+  var errors = validateScript();
+  if (errors.length) {
+    alert('Please fix these issues before saving:\n\n• ' + errors.join('\n• '));
+    return;
+  }
   var data = buildScriptPayload();
   data.id = editingId;
   fetch('/api/scripts', {
@@ -1172,6 +1219,11 @@ function saveScript() {
 }
 
 function saveAsNew() {
+  var errors = validateScript();
+  if (errors.length) {
+    alert('Please fix these issues before saving:\n\n• ' + errors.join('\n• '));
+    return;
+  }
   var data = buildScriptPayload();
   data.id = null;
   fetch('/api/scripts', {
@@ -1215,7 +1267,8 @@ function renderSteps() {
         '<button class="btn-rm" onclick="removeStep(' + i + ')">×</button>' +
       '</div>' +
       '<div class="sg">' +
-        '<div class="sf full"><label>What the bot says</label><textarea class="step-msg" rows="2" placeholder="Please enter...">' + esc(s.message) + '</textarea></div>' +
+        '<div class="sf full"><label>What the bot says <button type="button" onclick="aiEnhance(this)" style="margin-left:8px;padding:2px 8px;background:linear-gradient(135deg,#7c4dff,#9c6ee8);color:#fff;border:none;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;vertical-align:middle">✨ AI Enhance</button></label>' +
+        '<textarea class="step-msg" rows="2" placeholder="Please enter...">' + esc(s.message) + '</textarea></div>' +
         '<div class="sf"><label>Max digits</label><input type="number" class="step-digits" value="' + (s.maxDigits||5) + '" min="1" max="20"/></div>' +
         '<div class="sf"><label>Timeout (s)</label><input type="number" class="step-timeout" value="' + (s.timeout||15) + '" min="5" max="60"/></div>' +
         '<div class="sf full"><label>Confirmation after input</label><input type="text" class="step-confirm" value="' + esc(s.confirmMessage||'') + '"/></div>' +
@@ -1551,7 +1604,41 @@ function loadSecurityUI() {
     document.getElementById('sec-ip-enabled').checked = !!ipr.enabled;
     document.getElementById('ip-status-txt').textContent = ipr.enabled ? 'Currently ON' : 'Currently OFF';
     document.getElementById('sec-ips').value = (ipr.allowedIPs || []).join('\n');
+    document.getElementById('sec-blocked-countries').value = (ipr.blockedCountries || []).join(', ');
+    document.getElementById('sec-allowed-countries').value = (ipr.allowedCountries || []).join(', ');
   }).catch(function(){});
+  loadLoginLogs();
+}
+
+function loadLoginLogs() {
+  fetch('/api/auth/logs').then(function(r){ return r.json(); }).then(function(logs) {
+    var c = document.getElementById('login-logs-container');
+    if (!c) return;
+    if (!logs.length) { c.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:20px 0;text-align:center">No login attempts recorded yet.</div>'; return; }
+    var rows = logs.slice(0,100).map(function(l) {
+      var statusColor = l.success ? 'var(--green2)' : 'var(--red)';
+      var statusText = l.success ? '✅ Success' : '❌ Failed';
+      var reason = l.reason || '';
+      var t = new Date(l.time).toLocaleString();
+      return '<tr>' +
+        '<td style="font-size:11px;color:var(--text2)">' + t + '</td>' +
+        '<td style="font-family:var(--mono);font-size:11px">' + (l.ip||'—') + '</td>' +
+        '<td style="font-size:11px">' + (l.country||'—') + '</td>' +
+        '<td style="font-size:11px;color:var(--text2)">' + (l.city||'—') + '</td>' +
+        '<td style="font-size:11px">' + (l.username||'—') + '</td>' +
+        '<td style="font-size:11px;font-weight:600;color:' + statusColor + '">' + statusText + '</td>' +
+        '<td style="font-size:10px;color:var(--text3)">' + reason + '</td>' +
+        '</tr>';
+    }).join('');
+    c.innerHTML = '<div style="overflow-x:auto"><table class="log-table" style="font-size:12px">' +
+      '<thead><tr><th>Time</th><th>IP Address</th><th>Country</th><th>City</th><th>Username</th><th>Result</th><th>Reason</th></tr></thead>' +
+      '<tbody>' + rows + '</tbody></table></div>';
+  }).catch(function(){ });
+}
+
+function clearLoginLogs() {
+  if (!confirm('Clear all login logs?')) return;
+  fetch('/api/auth/logs', {method:'DELETE'}).then(function(){ loadLoginLogs(); });
 }
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -1566,7 +1653,9 @@ function saveSecurity() {
     password: document.getElementById('sec-pass').value || '••••',
     ipRestriction: {
       enabled: document.getElementById('sec-ip-enabled').checked,
-      allowedIPs: document.getElementById('sec-ips').value.split('\n').map(function(s){ return s.trim(); }).filter(Boolean)
+      allowedIPs: document.getElementById('sec-ips').value.split('\n').map(function(s){ return s.trim(); }).filter(Boolean),
+      blockedCountries: document.getElementById('sec-blocked-countries').value.split(',').map(function(s){ return s.trim(); }).filter(Boolean),
+      allowedCountries: document.getElementById('sec-allowed-countries').value.split(',').map(function(s){ return s.trim(); }).filter(Boolean)
     }
   };
   fetch('/api/auth', {
@@ -1579,13 +1668,54 @@ function doLogout() {
   fetch('/auth/logout', {method:'POST'}).then(function(){ window.location.href = '/login'; });
 }
 
+
+// ─── AI Enhance ───────────────────────────────────────────────────────────────
+function aiEnhance(btn) {
+  var ta = btn.closest('.sf').querySelector('textarea') || btn.closest('.ff').querySelector('textarea');
+  if (ta) aiEnhanceTextarea(ta, btn);
+}
+function aiEnhanceById(id) {
+  var ta = document.getElementById(id);
+  var btn = ta ? ta.previousElementSibling : null;
+  if (ta) aiEnhanceTextarea(ta, btn);
+}
+function aiEnhanceTextarea(ta, btn) {
+  var original = ta.value.trim();
+  if (!original) { alert('Please write something first, then click AI Enhance to improve it.'); return; }
+  var origText = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = '⏳ ...'; btn.disabled = true; }
+  fetch('/api/ai-enhance', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: original })
+  }).then(function(r){ return r.json(); }).then(function(d) {
+    if (d.enhanced) {
+      ta.value = d.enhanced;
+      ta.style.borderColor = 'var(--purple)';
+      setTimeout(function(){ ta.style.borderColor = ''; }, 2000);
+    } else {
+      alert('AI enhance failed: ' + (d.error||'Unknown error'));
+    }
+    if (btn) { btn.textContent = origText || '✨ AI Enhance'; btn.disabled = false; }
+  }).catch(function(e) {
+    alert('Could not reach AI service.');
+    if (btn) { btn.textContent = origText || '✨ AI Enhance'; btn.disabled = false; }
+  });
+}
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
-loadSettingsUI();
-loadScriptsUI();
-pollSessions();
-setInterval(pollSessions, 2000);
-// Load security settings in background
-setTimeout(loadSecurityUI, 500);
+function initApp() {
+  loadSettingsUI();
+  loadScriptsUI();
+  pollSessions();
+  setInterval(pollSessions, 2000);
+  setTimeout(loadSecurityUI, 800);
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initApp);
+} else {
+  initApp();
+}
 </script>
 </body>
 </html>
