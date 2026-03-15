@@ -610,7 +610,13 @@ input,select,textarea{font-family:var(--body)}
       <!-- Label + Script row -->
       <div class="phone-label-row" style="margin-top:8px">
         <input type="text" id="labelInput" placeholder="Label / note"/>
-        <select id="scriptSelect" style="max-width:100px"></select>
+        <select id="scriptSelect" style="max-width:100px">
+  <option value="tpl-default">Default Script ★</option>
+  <option value="tpl-payment">Payment Collection</option>
+  <option value="tpl-survey">Customer Survey</option>
+  <option value="tpl-appointment">Appointment Reminder</option>
+  <option value="tpl-verification">Identity Verification</option>
+</select>
       </div>
     </div>
 
@@ -698,7 +704,35 @@ input,select,textarea{font-family:var(--body)}
         <div class="ph-sub">Save multiple scripts and select one per call</div>
       </div>
     </div>
-    <div id="script-lib" class="script-lib"></div>
+    <div id="script-lib" class="script-lib">
+  <div class="scard selected is-default" id="sc-tpl-default" onclick="loadScriptById('tpl-default')">
+    <div class="scard-name">Default Script <span style="font-size:8px;background:rgba(0,212,255,0.12);color:var(--cyan2);padding:1px 5px;border-radius:3px;margin-left:4px">TEMPLATE</span></div>
+    <div class="scard-meta">1 step · <span style="color:var(--amber)">★ Default</span></div>
+    <div class="scard-btns"><button class="btn-scard setdef" onclick="event.stopPropagation();setDefault('tpl-default')">✓ Default</button></div>
+  </div>
+  <div class="scard" id="sc-tpl-payment" onclick="loadScriptById('tpl-payment')">
+    <div class="scard-name">Payment Collection <span style="font-size:8px;background:rgba(0,212,255,0.12);color:var(--cyan2);padding:1px 5px;border-radius:3px;margin-left:4px">TEMPLATE</span></div>
+    <div class="scard-meta">3 steps · tap to select</div>
+    <div class="scard-btns"><button class="btn-scard setdef" onclick="event.stopPropagation();setDefault('tpl-payment')">Set Default</button></div>
+  </div>
+  <div class="scard" id="sc-tpl-survey" onclick="loadScriptById('tpl-survey')">
+    <div class="scard-name">Customer Survey <span style="font-size:8px;background:rgba(0,212,255,0.12);color:var(--cyan2);padding:1px 5px;border-radius:3px;margin-left:4px">TEMPLATE</span></div>
+    <div class="scard-meta">2 steps · tap to select</div>
+    <div class="scard-btns"><button class="btn-scard setdef" onclick="event.stopPropagation();setDefault('tpl-survey')">Set Default</button></div>
+  </div>
+  <div class="scard" id="sc-tpl-appointment" onclick="loadScriptById('tpl-appointment')">
+    <div class="scard-name">Appointment Reminder <span style="font-size:8px;background:rgba(0,212,255,0.12);color:var(--cyan2);padding:1px 5px;border-radius:3px;margin-left:4px">TEMPLATE</span></div>
+    <div class="scard-meta">1 step · tap to select</div>
+    <div class="scard-btns"><button class="btn-scard setdef" onclick="event.stopPropagation();setDefault('tpl-appointment')">Set Default</button></div>
+  </div>
+  <div class="scard" id="sc-tpl-verification" onclick="loadScriptById('tpl-verification')">
+    <div class="scard-name">Identity Verification <span style="font-size:8px;background:rgba(0,212,255,0.12);color:var(--cyan2);padding:1px 5px;border-radius:3px;margin-left:4px">TEMPLATE</span></div>
+    <div class="scard-meta">2 steps · tap to select</div>
+    <div class="scard-btns"><button class="btn-scard setdef" onclick="event.stopPropagation();setDefault('tpl-verification')">Set Default</button></div>
+  </div>
+  <div id="sc-user-scripts"></div>
+  <div class="scard scard-new" onclick="newScript()"><div class="scard-new-icon">＋</div><div style="font-size:12px;font-weight:600">New Script</div></div>
+</div>
     <div class="script-name-bar">
       <input class="sname-input" id="sname" placeholder="Script name..."/>
     </div>
@@ -978,7 +1012,7 @@ var VOICES = [
 
 // ─── State ────────────────────────────────────────────────────────────────────
 var settings = {};
-var scripts = [
+var SEED_SCRIPTS = [
   {
     id:'tpl-default', name:'Default Script', isDefault:true, createdAt:'2024-01-01T00:00:00.000Z',
     greeting:{ message:"Hello! This is a call from our company. Press 1 to continue, or press 2 to end this call.", timeout:10, noInputMessage:"We did not receive your input. Goodbye." },
@@ -1032,6 +1066,7 @@ var scripts = [
     errorMessage:"We could not verify your identity due to incorrect input. Please call our security team directly. Goodbye."
   }
 ];
+var scripts = JSON.parse(JSON.stringify(SEED_SCRIPTS));
 var sessions = [];
 var logs = [];
 var editingId = null;
@@ -1072,7 +1107,7 @@ function updateProviderUI(p) {
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 function loadSettingsUI() {
-  fetch('/api/settings').then(function(r){ return r.json(); }).then(function(s) {
+  fetch('/api/settings', {credentials:'include'}).then(function(r){ return r.json(); }).then(function(s) {
     settings = s;
     document.getElementById('cfg-company').value = s.companyName || '';
     document.getElementById('cfg-lang').value = s.language || 'en-US';
@@ -1173,62 +1208,98 @@ function renderVoices(sel) {
 function autoDetect(id) { document.getElementById(id).value = window.location.origin; }
 
 // ─── Scripts ──────────────────────────────────────────────────────────────────
-function loadScriptsUI() {
-  // Seeds are already in `scripts` array from page load — render immediately
-  renderScriptLib();
-  renderScriptSelect();
-  var def = scripts.find(function(x){ return x.isDefault; }) || scripts[0];
-  editingId = def.id;
-  loadScriptEditor(def);
+// ─── localStorage helpers — scripts persist across refreshes ─────────────────
+var LS_SCRIPTS = 'epewon_v4_scripts';
+function lsGetScripts() {
+  try {
+    var raw = localStorage.getItem(LS_SCRIPTS);
+    if (!raw) return null;
+    var parsed = JSON.parse(raw);
+    return (parsed && parsed.length) ? parsed : null;
+  } catch(e) { return null; }
+}
+function lsSaveScripts(arr) {
+  try { localStorage.setItem(LS_SCRIPTS, JSON.stringify(arr)); } catch(e) {}
+}
 
-  // Then fetch saved/edited scripts from server and merge in background
-  fetch('/api/scripts', {cache:'no-store', credentials:'include'})
-    .then(function(r){ return r.ok ? r.json() : null; })
-    .then(function(saved) {
-      if (!saved || !saved.length) return; // No saved scripts — keep seeds as-is
-      var seedIds = scripts.map(function(s){ return s.id; });
-      // Update existing seed entries if user edited them
-      saved.forEach(function(sv) {
-        var i = scripts.findIndex(function(s){ return s.id === sv.id; });
-        if (i >= 0) { scripts[i] = sv; } // update in place
-        else { scripts.push(sv); }        // add user-created scripts
-      });
+function loadScriptsUI() {
+  fetch('/api/scripts')
+    .then(function(r){ return r.json(); })
+    .then(function(s) {
+      if (!s || !s.length) { setTimeout(loadScriptsUI, 1000); return; }
+      scripts = s;
       renderScriptLib();
       renderScriptSelect();
-      // Keep the same script selected in editor
-      var cur = scripts.find(function(x){ return x.id === editingId; });
-      if (cur) loadScriptEditor(cur);
+      var def = scripts.find(function(x){ return x.isDefault; }) || scripts[0];
+      editingId = def.id;
+      loadScriptEditor(def);
     })
-    .catch(function(e){ /* silently ignore — seeds already showing */ });
+    .catch(function(){ setTimeout(loadScriptsUI, 1500); });
 }
 
 function renderScriptLib() {
-  var html = scripts.map(function(s) {
-    var delBtn = scripts.length > 1 ? '<button class="btn-scard del" onclick="event.stopPropagation();deleteScript(\'' + s.id + '\')">Del</button>' : '';
-    return '<div class="scard' + (s.id===editingId?' selected':'') + (s.isDefault?' is-default':'') + '" onclick="loadScriptEditorById(\'' + s.id + '\')">' +
+  // Update template card highlighting
+  var seedIds = ['tpl-default','tpl-payment','tpl-survey','tpl-appointment','tpl-verification'];
+  seedIds.forEach(function(id) {
+    var card = document.getElementById('sc-' + id);
+    if (!card) return;
+    var s = scripts.find(function(x){ return x.id === id; }) || SEED_SCRIPTS.find(function(x){ return x.id === id; });
+    if (!s) return;
+    card.className = 'scard' + (id === editingId ? ' selected' : '') + (s.isDefault ? ' is-default' : '');
+    card.querySelector('.scard-meta').innerHTML = (s.steps||[]).length + ' step' + ((s.steps||[]).length!==1?'s':'') + ' · ' + (s.isDefault ? '<span style="color:var(--amber)">★ Default</span>' : 'tap to select');
+    var defBtn = card.querySelector('.btn-scard');
+    if (defBtn) defBtn.textContent = s.isDefault ? '✓ Default' : 'Set Default';
+  });
+  // Render user-created scripts
+  var userDiv = document.getElementById('sc-user-scripts');
+  if (!userDiv) return;
+  var userScripts = scripts.filter(function(s){ return seedIds.indexOf(s.id) === -1; });
+  userDiv.innerHTML = userScripts.map(function(s) {
+    return '<div class="scard' + (s.id===editingId?' selected':'') + (s.isDefault?' is-default':'') + '" onclick="loadScriptById(\'' + s.id + '\')">' +
       '<div class="scard-name">' + esc(s.name) + '</div>' +
-      '<div class="scard-meta">' + (s.steps||[]).length + ' steps · ' + (s.isDefault?'<span style="color:var(--amber)">Default</span>':'inactive') + '</div>' +
+      '<div class="scard-meta">' + (s.steps||[]).length + ' step' + ((s.steps||[]).length!==1?'s':'') + ' · ' + (s.isDefault?'<span style="color:var(--amber)">★ Default</span>':'tap to select') + '</div>' +
       '<div class="scard-btns">' +
         '<button class="btn-scard setdef" onclick="event.stopPropagation();setDefault(\'' + s.id + '\')">' + (s.isDefault?'✓ Default':'Set Default') + '</button>' +
-        delBtn +
+        '<button class="btn-scard del" onclick="event.stopPropagation();deleteScript(\'' + s.id + '\')">Delete</button>' +
       '</div>' +
       '</div>';
   }).join('');
-  html += '<div class="scard scard-new" onclick="newScript()"><div class="scard-new-icon">＋</div><div style="font-size:12px;font-weight:600">New Script</div></div>';
-  document.getElementById('script-lib').innerHTML = html;
 }
 
 function renderScriptSelect() {
-  document.getElementById('scriptSelect').innerHTML = scripts.map(function(s) {
-    return '<option value="' + s.id + '">' + esc(s.name) + (s.isDefault?' ★':'') + '</option>';
-  }).join('');
+  var sel = document.getElementById('scriptSelect');
+  var seedIds = ['tpl-default','tpl-payment','tpl-survey','tpl-appointment','tpl-verification'];
+  // Update star on seed options
+  seedIds.forEach(function(id) {
+    var s = scripts.find(function(x){ return x.id === id; }) || SEED_SCRIPTS.find(function(x){ return x.id === id; });
+    var opt = sel.querySelector('option[value="' + id + '"]');
+    if (opt && s) opt.textContent = s.name + (s.isDefault ? ' ★' : '');
+  });
+  // Remove old user options
+  Array.from(sel.querySelectorAll('option[data-user]')).forEach(function(o){ o.remove(); });
+  // Add user scripts
+  var userScripts = scripts.filter(function(s){ return seedIds.indexOf(s.id) === -1; });
+  userScripts.forEach(function(s) {
+    var o = document.createElement('option');
+    o.value = s.id;
+    o.textContent = s.name + (s.isDefault ? ' ★' : '');
+    o.setAttribute('data-user','1');
+    sel.appendChild(o);
+  });
+  // Set selected
   var def = scripts.find(function(x){ return x.isDefault; });
-  if (def) document.getElementById('scriptSelect').value = def.id;
+  if (def) sel.value = def.id;
 }
 
 function loadScriptEditorById(id) {
-  var s = scripts.find(function(x){ return x.id === id; });
+  var s = scripts.find(function(x){ return x.id === id; }) || SEED_SCRIPTS.find(function(x){ return x.id === id; });
   if (s) loadScriptEditor(s);
+}
+function loadScriptById(id) {
+  editingId = id;
+  var s = scripts.find(function(x){ return x.id === id; }) || SEED_SCRIPTS.find(function(x){ return x.id === id; });
+  if (s) loadScriptEditor(s);
+  renderScriptLib();
 }
 
 function loadScriptEditor(s) {
@@ -1313,16 +1384,17 @@ function saveScript() {
     return;
   }
   var data = buildScriptPayload();
-  data.id = editingId;
-  fetch('/api/scripts', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(data)
-  }).then(function(r){ return r.json(); }).then(function(res) {
-    scripts = res.scripts;
-    renderScriptLib();
-    renderScriptSelect();
-    showSaved('script-saved');
-  });
+  data.id = editingId || ('usr-' + Date.now());
+  editingId = data.id;
+  // Update in scripts array
+  var idx = scripts.findIndex(function(s){ return s.id === data.id; });
+  if (idx >= 0) scripts[idx] = data; else scripts.push(data);
+  lsSaveScripts(scripts);
+  renderScriptLib();
+  renderScriptSelect();
+  showSaved('script-saved');
+  // Also sync to server in background (best effort)
+  fetch('/api/scripts', {method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)}).catch(function(){});
 }
 
 function saveAsNew() {
@@ -1332,37 +1404,41 @@ function saveAsNew() {
     return;
   }
   var data = buildScriptPayload();
-  data.id = null;
-  fetch('/api/scripts', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(data)
-  }).then(function(r){ return r.json(); }).then(function(res) {
-    scripts = res.scripts;
-    var newest = scripts[scripts.length-1];
-    editingId = newest.id;
-    renderScriptLib();
-    renderScriptSelect();
-    showSaved('script-saved');
-  });
+  data.id = 'usr-' + Date.now();
+  data.isDefault = false;
+  data.createdAt = new Date().toISOString();
+  scripts.push(data);
+  editingId = data.id;
+  lsSaveScripts(scripts);
+  renderScriptLib();
+  renderScriptSelect();
+  showSaved('script-saved');
+  // Sync to server in background
+  fetch('/api/scripts', {method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)}).catch(function(){});
 }
 
 function setDefault(id) {
-  fetch('/api/scripts/' + id + '/setdefault', {method:'POST'})
-    .then(function(){ return fetch('/api/scripts'); })
-    .then(function(r){ return r.json(); })
-    .then(function(s){ scripts=s; renderScriptLib(); renderScriptSelect(); });
+  scripts.forEach(function(s){ s.isDefault = (s.id === id); });
+  lsSaveScripts(scripts);
+  renderScriptLib();
+  renderScriptSelect();
+  // Sync to server
+  fetch('/api/scripts/' + id + '/setdefault', {method:'POST', credentials:'include'}).catch(function(){});
 }
 
 function deleteScript(id) {
   if (!confirm('Delete this script?')) return;
-  fetch('/api/scripts/' + id, {method:'DELETE'})
-    .then(function(r){ return r.json(); })
-    .then(function(res) {
-      scripts = res.scripts;
-      if (editingId === id) loadScriptEditor(scripts.find(function(x){return x.isDefault;})||scripts[0]);
-      renderScriptLib();
-      renderScriptSelect();
-    });
+  var seedIds = SEED_SCRIPTS.map(function(s){ return s.id; });
+  if (seedIds.indexOf(id) !== -1) { alert('Template scripts cannot be deleted.'); return; }
+  if (scripts.length <= 1) { alert('Cannot delete the last script.'); return; }
+  scripts = scripts.filter(function(s){ return s.id !== id; });
+  if (!scripts.find(function(s){ return s.isDefault; })) scripts[0].isDefault = true;
+  lsSaveScripts(scripts);
+  if (editingId === id) { var def = scripts.find(function(x){return x.isDefault;})||scripts[0]; editingId = def.id; loadScriptEditor(def); }
+  renderScriptLib();
+  renderScriptSelect();
+  // Sync to server
+  fetch('/api/scripts/' + id, {method:'DELETE', credentials:'include'}).catch(function(){});
 }
 
 function renderSteps() {
