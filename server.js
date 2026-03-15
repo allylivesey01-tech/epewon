@@ -22,6 +22,16 @@ function uid() { return Date.now().toString(36) + Math.random().toString(36).sli
 
 const DATA = path.join(__dirname, "data");
 if (!fs.existsSync(DATA)) fs.mkdirSync(DATA, { recursive: true });
+
+// Auto-detect and remember the public server URL from incoming requests
+let detectedBaseUrl = "";
+function getPublicUrl(req) {
+  if (detectedBaseUrl) return detectedBaseUrl;
+  const proto = req.headers["x-forwarded-proto"] || "https";
+  const host  = req.headers["x-forwarded-host"] || req.headers.host || "";
+  if (host) { detectedBaseUrl = proto + "://" + host; }
+  return detectedBaseUrl;
+}
 const F = {
   settings: path.join(DATA, "settings.json"),
   scripts:  path.join(DATA, "scripts.json"),
@@ -173,17 +183,16 @@ const SEED_SCRIPTS = [
 function loadSettings() { return { ...DEF_SETTINGS, ...rj(F.settings, DEF_SETTINGS) }; }
 function saveSettings(d) { wj(F.settings, d); }
 function loadScripts() {
+  // Seeds ALWAYS use hardcoded versions - never from disk.
+  // This prevents old/corrupted disk data from breaking the templates.
   const seeds = JSON.parse(JSON.stringify(SEED_SCRIPTS));
   const seedIds = seeds.map(function(s){ return s.id; });
   try {
     const saved = rj(F.scripts, null);
     if (saved && saved.length) {
-      const merged = seeds.map(function(seed) {
-        const edited = saved.find(function(s){ return s.id === seed.id; });
-        return edited || seed;
-      });
+      // Only add user-created scripts (not any seed IDs)
       const userCreated = saved.filter(function(s){ return !seedIds.includes(s.id); });
-      return merged.concat(userCreated);
+      return seeds.concat(userCreated);
     }
   } catch(e) {}
   return seeds;
@@ -218,15 +227,26 @@ async function makeCall(ctx, to, twimlUrl, statusUrl) {
   throw new Error("Provider "+ctx.type+" not supported.");
 }
 
-const callSessions = {};
+// Load saved sessions from disk on startup (so monitor works after restarts)
+const SESSIONS_FILE = path.join(DATA, "call_sessions.json");
+function loadCallSessions() {
+  try { if(fs.existsSync(SESSIONS_FILE)) return JSON.parse(fs.readFileSync(SESSIONS_FILE,"utf8")); } catch(e) {}
+  return {};
+}
+function saveCallSessions() {
+  try { fs.writeFileSync(SESSIONS_FILE, JSON.stringify(callSessions)); } catch(e) {}
+}
+const callSessions = loadCallSessions();
 function syncLog(s) {
-  // Save to disk
+  // Save to logs file
   const logs=loadLogs();
   const i=logs.findIndex(l=>l.callSid===s.callSid);
   if(i>=0)logs[i]={...logs[i],...s};else logs.unshift(s);
   saveLogs(logs);
-  // Also keep memory in sync
+  // Keep memory in sync
   callSessions[s.callSid]=s;
+  // Persist sessions so monitor works after restarts
+  saveCallSessions();
 }
 
 
@@ -357,10 +377,20 @@ app.get("/api/seed-scripts", (req, res) => {
 
 app.get("/api/scripts",    (req,res) => res.json(loadScripts()));
 app.post("/api/scripts",   (req,res) => {
-  const scripts=loadScripts(); const body=req.body;
-  if(body.id){const i=scripts.findIndex(s=>s.id===body.id);if(i>=0)scripts[i]={...scripts[i],...body,updatedAt:new Date().toISOString()};else scripts.push({...body,createdAt:new Date().toISOString()});}
-  else scripts.push({...body,id:uid(),createdAt:new Date().toISOString()});
-  saveScripts(scripts); res.json({success:true,scripts});
+  const body=req.body;
+  const seedIds=['tpl-default','tpl-payment','tpl-survey','tpl-appointment','tpl-verification'];
+  // Load only user-created scripts from disk
+  let diskScripts=[];
+  try{ const s=rj(F.scripts,null); if(s&&s.length) diskScripts=s.filter(function(x){return !seedIds.includes(x.id);}); }catch(e){}
+  if(body.id && !seedIds.includes(body.id)){
+    const i=diskScripts.findIndex(s=>s.id===body.id);
+    if(i>=0)diskScripts[i]={...diskScripts[i],...body,updatedAt:new Date().toISOString()};
+    else diskScripts.push({...body,createdAt:new Date().toISOString()});
+  } else if(!body.id){
+    diskScripts.push({...body,id:uid(),createdAt:new Date().toISOString()});
+  }
+  saveScripts(diskScripts);
+  res.json({success:true,scripts:loadScripts()});
 });
 app.delete("/api/scripts/:id", (req,res) => {
   let scripts=loadScripts(); if(scripts.length<=1) return res.status(400).json({error:"Cannot delete the last script."});
@@ -392,8 +422,11 @@ app.post("/api/call", async (req,res) => {
   if(!ctx) return res.status(400).json({error:"Provider credentials not configured. Go to Settings."});
   const scripts=loadScripts();
   const script=(scriptId?scripts.find(s=>s.id===scriptId):null)||scripts.find(s=>s.isDefault)||scripts[0];
+  // Use saved baseUrl OR auto-detect from this request
+  const baseUrl = ctx.baseUrl || getPublicUrl(req);
+  if(!baseUrl) return res.status(400).json({error:"Server URL not configured. Go to Settings and click Auto-detect."});
   try{
-    const callSid=await makeCall(ctx,phoneNumber,ctx.baseUrl+"/twiml/start?sid="+script.id,ctx.baseUrl+"/twiml/status");
+    const callSid=await makeCall(ctx,phoneNumber,baseUrl+"/twiml/start?sid="+script.id,baseUrl+"/twiml/status");
     const entry={id:uid(),callSid,phone:phoneNumber,label:label||"Call",scriptName:script.name,provider:ctx.type,status:"initiated",statusDetail:"Dialing...",startTime:new Date().toISOString(),endTime:null,duration:null,currentStep:-1,collected:[],steps:script.steps.length};
     callSessions[callSid]=entry; const logs=loadLogs(); logs.unshift(entry); saveLogs(logs);
     res.json({success:true,callSid});
@@ -440,13 +473,8 @@ function getBase(req){
   const p=s.provider||"twilio";
   const saved=(s[p]||{}).baseUrl||"";
   if(saved) return saved;
-  // Fallback: build URL from the incoming request (Twilio called us, so this is our public URL)
-  if(req){
-    const proto=req.headers["x-forwarded-proto"]||"https";
-    const host=req.headers["x-forwarded-host"]||req.headers.host||"";
-    if(host) return proto+"://"+host;
-  }
-  return "";
+  if(req) return getPublicUrl(req);
+  return detectedBaseUrl||"";
 }
 function getScript(id){const ss=loadScripts();return ss.find(s=>s.id===id)||ss[0];}
 
