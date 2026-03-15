@@ -1078,7 +1078,7 @@ function switchTab(id, btn) {
   document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('active'); });
   document.getElementById('panel-' + id).classList.add('active');
   btn.classList.add('active');
-  if (id === 'logs') loadLogs();
+  if (id === 'logs') { pollSessions(); loadLogs(); }
   if (id === 'security') loadSecurityUI();
 }
 
@@ -1623,8 +1623,7 @@ function renderMonitor() {
 function deleteSession(sid) {
   sessions = sessions.filter(function(s){ return s.callSid !== sid; });
   var card = document.getElementById('mc-' + sid);
-  if (card) card.remove();
-  if (!sessions.length) document.getElementById('empty-mon').style.display = 'flex';
+  if (card) { card.style.opacity='0'; card.style.transition='opacity 0.3s'; setTimeout(function(){ card.remove(); if(!sessions.length) document.getElementById('empty-mon').style.display='flex'; }, 300); }
 }
 
 function copyData(sid) {
