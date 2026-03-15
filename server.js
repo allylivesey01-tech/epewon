@@ -3,7 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
-const { v4: uuidv4 } = require("uuid");
+function uuidv4(){ return Date.now().toString(36) + Math.random().toString(36).slice(2); }
 
 const app = express();
 app.use(express.json());
