@@ -10,7 +10,7 @@ const path    = require("path");
 //  edit this file, change false to true below, save (commit).
 //  Render will redeploy in ~2 minutes and you can log in from any IP.
 //  After fixing your IP settings, come back and change it to false again.
-const IP_BYPASS = true;
+const IP_BYPASS = false;
 // ════════════════════════════════════════════════════════════════════════════
 
 const app = express();
@@ -34,7 +34,7 @@ function rj(file, def) {
 }
 function wj(file, data) { fs.writeFileSync(file, JSON.stringify(data, null, 2)); }
 
-const DEF_AUTH = { username:"admin", password:"epewon2024", ipRestriction:{ enabled:false, allowedIPs:[] } };
+const DEF_AUTH = { username:"admin", password:"epewon2024", ipRestriction:{ enabled:false, allowedIPs:[], blockedCountries:[], allowedCountries:[] } };
 function loadAuth() { return { ...DEF_AUTH, ...rj(F.auth, DEF_AUTH) }; }
 function saveAuth(d) { wj(F.auth, d); }
 
@@ -61,21 +61,26 @@ function ipAllowed(req) {
   if (IP_BYPASS) return true;
   const auth = loadAuth();
   if (!auth.ipRestriction || !auth.ipRestriction.enabled) return true;
-  const allowed = auth.ipRestriction.allowedIPs || [];
-  if (!allowed.length) return true;
+  const allowedIPs = auth.ipRestriction.allowedIPs || [];
+  const blockedCountries = auth.ipRestriction.blockedCountries || [];
+  const allowedCountries = auth.ipRestriction.allowedCountries || [];
+  // If no restrictions set at all, allow everything
+  if (!allowedIPs.length && !blockedCountries.length && !allowedCountries.length) return true;
   const clientIP = (req.headers["x-forwarded-for"]||"").split(",")[0].trim() || req.socket.remoteAddress || "";
-  return allowed.some(function(ip) {
-    if (!ip) return false;
-    if (ip.includes("/")) {
-      try {
-        const [base, bits] = ip.split("/");
-        const mask = ~((1 << (32-parseInt(bits)))-1) >>> 0;
-        const toNum = s => s.split(".").reduce((a,b)=>((a<<8)|+b)>>>0, 0);
-        return (toNum(clientIP) & mask) === (toNum(base) & mask);
-      } catch(e) { return false; }
-    }
-    return clientIP === ip;
-  });
+  // IP whitelist check
+  if (allowedIPs.length) {
+    const ipOk = allowedIPs.some(function(ip) {
+      if (!ip) return false;
+      if (ip.includes("/")) {
+        try { const [base,bits]=ip.split("/"); const mask=~((1<<(32-parseInt(bits)))-1)>>>0; const toNum=s=>s.split(".").reduce((a,b)=>((a<<8)|+b)>>>0,0); return(toNum(clientIP)&mask)===(toNum(base)&mask); } catch(e) { return false; }
+      }
+      return clientIP === ip;
+    });
+    if (!ipOk) return false;
+  }
+  // Country check is async — skip here, done at login time via getGeoInfo
+  // (for real-time blocking, geoCheck is done in login + a cached property)
+  return true;
 }
 function requireAuth(req, res, next) {
   const pub = req.path.startsWith("/auth") || req.path.startsWith("/twiml") || req.path === "/login";
@@ -145,6 +150,28 @@ async function makeCall(ctx, to, twimlUrl, statusUrl) {
 const callSessions = {};
 function syncLog(s) { const logs=loadLogs(); const i=logs.findIndex(l=>l.callSid===s.callSid); if(i>=0)logs[i]={...logs[i],...s};else logs.unshift(s); saveLogs(logs); }
 
+
+// ── GeoIP lookup (free, no key needed) ───────────────────────────────────────
+async function getGeoInfo(ip) {
+  if (!ip || ip === '::1' || ip.startsWith('127.') || ip.startsWith('::ffff:127')) return { country:'Local', region:'Local', city:'Local' };
+  try {
+    const r = await fetch('http://ip-api.com/json/'+ip+'?fields=status,country,regionName,city', { signal: AbortSignal.timeout(3000) });
+    const d = await r.json();
+    if (d.status === 'success') return { country: d.country||'Unknown', region: d.regionName||'Unknown', city: d.city||'Unknown' };
+  } catch(e) {}
+  return { country:'Unknown', region:'Unknown', city:'Unknown' };
+}
+
+// Login attempt log (in-memory + persisted)
+const LOGIN_LOG_FILE = path.join(DATA, 'login_logs.json');
+function loadLoginLogs() { return rj(LOGIN_LOG_FILE, []); }
+function saveLoginLog(entry) {
+  const logs = loadLoginLogs();
+  logs.unshift(entry);
+  if (logs.length > 500) logs.splice(500); // keep last 500
+  wj(LOGIN_LOG_FILE, logs);
+}
+
 // ── Login page ────────────────────────────────────────────────────────────────
 app.get("/login", (req, res) => {
   if (checkSession(req)) return res.redirect("/");
@@ -152,16 +179,46 @@ app.get("/login", (req, res) => {
 });
 
 // ── Auth endpoints ────────────────────────────────────────────────────────────
-app.post("/auth/login", (req, res) => {
-  if (!ipAllowed(req)) return res.status(403).json({ ok:false, error:"Your IP address is not allowed." });
+app.post("/auth/login", async (req, res) => {
+  const clientIP = (req.headers["x-forwarded-for"]||"").split(",")[0].trim() || req.socket.remoteAddress || "unknown";
+  const geo = await getGeoInfo(clientIP);
   const { username, password } = req.body;
   const auth = loadAuth();
+  const logEntry = { time: new Date().toISOString(), ip: clientIP, country: geo.country, region: geo.region, city: geo.city, username: username||"", success: false, reason: "" };
+
+  if (!ipAllowed(req)) {
+    logEntry.reason = "IP not allowed";
+    saveLoginLog(logEntry);
+    return res.status(403).json({ ok:false, error:"Your IP address is not allowed." });
+  }
+  // Country-based blocking check
+  const ipr = auth.ipRestriction || {};
+  if (ipr.enabled && (ipr.blockedCountries||[]).length || (ipr.allowedCountries||[]).length) {
+    const bc = (ipr.blockedCountries||[]).map(s=>s.toLowerCase());
+    const ac = (ipr.allowedCountries||[]).map(s=>s.toLowerCase());
+    const geoCountry = geo.country.toLowerCase();
+    if (bc.length && bc.includes(geoCountry)) {
+      logEntry.reason = "Country blocked: " + geo.country;
+      saveLoginLog(logEntry);
+      return res.status(403).json({ ok:false, error:"Access not allowed from your country ("+geo.country+")." });
+    }
+    if (ac.length && !ac.includes(geoCountry)) {
+      logEntry.reason = "Country not in allowlist: " + geo.country;
+      saveLoginLog(logEntry);
+      return res.status(403).json({ ok:false, error:"Access not allowed from your country ("+geo.country+")." });
+    }
+  }
+
   if (username === auth.username && password === auth.password) {
     const token = makeToken();
     sessions[token] = { createdAt: Date.now() };
+    logEntry.success = true; logEntry.reason = "Login successful";
+    saveLoginLog(logEntry);
     res.setHeader("Set-Cookie", "ep_sess="+token+"; HttpOnly; Path=/; Max-Age=86400; SameSite=Lax");
     return res.json({ ok:true });
   }
+  logEntry.reason = "Wrong password";
+  saveLoginLog(logEntry);
   res.status(401).json({ ok:false, error:"Wrong username or password." });
 });
 app.post("/auth/logout", (req, res) => {
@@ -177,6 +234,15 @@ app.post("/api/auth", (req, res) => {
   if (body.password && body.password!=="••••") updated.password=body.password;
   if (body.ipRestriction!==undefined) updated.ipRestriction={...cur.ipRestriction,...body.ipRestriction};
   saveAuth(updated); res.json({ success:true });
+});
+
+
+app.get("/api/auth/logs", (req, res) => {
+  res.json(loadLoginLogs());
+});
+app.delete("/api/auth/logs", (req, res) => {
+  wj(LOGIN_LOG_FILE, []);
+  res.json({ success: true });
 });
 
 // ── Settings ──────────────────────────────────────────────────────────────────
@@ -242,6 +308,34 @@ app.post("/api/call/:sid/end", async (req,res) => {
   const {sid}=req.params; const ctx=makeClient(loadSettings());
   try{if(ctx&&(ctx.type==="twilio"||ctx.type==="signalwire")&&ctx.client)await ctx.client.calls(sid).update({status:"completed"});if(callSessions[sid]){callSessions[sid].status="ended-by-user";callSessions[sid].statusDetail="Ended by you";syncLog(callSessions[sid]);}res.json({success:true});}
   catch(err){res.status(500).json({error:err.message});}
+});
+
+
+// ── AI Enhance endpoint ───────────────────────────────────────────────────────
+app.post("/api/ai-enhance", async (req, res) => {
+  const { text } = req.body;
+  if (!text) return res.status(400).json({ error: "No text provided." });
+  try {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 300,
+        messages: [{
+          role: "user",
+          content: "You are rewriting a phone IVR script message to sound more professional, clear, and friendly. Keep it concise (under 2 sentences). Preserve the meaning exactly. Only return the improved text, nothing else.\n\nOriginal: " + text
+        }]
+      })
+    });
+    const d = await r.json();
+    if (d.content && d.content[0] && d.content[0].text) {
+      return res.json({ enhanced: d.content[0].text.trim() });
+    }
+    res.json({ error: "No response from AI." });
+  } catch(err) {
+    res.json({ error: err.message });
+  }
 });
 
 // ── TwiML ─────────────────────────────────────────────────────────────────────
