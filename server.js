@@ -95,7 +95,12 @@ function ipAllowed(req) {
   return true;
 }
 function requireAuth(req, res, next) {
-  const pub = req.path.startsWith("/auth") || req.path.startsWith("/twiml") || req.path === "/login";
+  // Scripts are never blocked - they load like username/password from a file
+  const pub = req.path.startsWith("/auth")
+    || req.path.startsWith("/twiml")
+    || req.path === "/login"
+    || req.path.startsWith("/api/scripts")
+    || req.path.startsWith("/api/seed-scripts");
   if (pub) return next();
   if (!ipAllowed(req)) return res.status(403).send("403: Your IP address is not allowed.");
   if (!checkSession(req)) {
