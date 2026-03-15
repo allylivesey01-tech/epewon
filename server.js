@@ -566,18 +566,21 @@ app.post("/twiml/status",(req,res)=>{
 
 // Start server immediately - never block on Redis
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log("✅ Epewon Pro → http://localhost:" + PORT);
-  // Load persisted data from Upstash Redis in background
-  Promise.all([
-    loadAuthAsync(),
-    loadSettingsAsync(),
-    loadScriptsAsync(),
-    loadLogsAsync(),
-    loadLoginLogsAsync()
-  ]).then(function() {
-    console.log("✅ Redis data loaded");
-  }).catch(function(e) {
-    console.log("⚠️ Redis load failed, using defaults:", e.message);
+// Load ALL data from Redis FIRST, then open port
+// This way when the browser requests /api/settings, data is already loaded
+Promise.all([
+  loadAuthAsync(),
+  loadSettingsAsync(),
+  loadScriptsAsync(),
+  loadLogsAsync(),
+  loadLoginLogsAsync()
+]).then(function() {
+  console.log("✅ Redis data loaded");
+}).catch(function(e) {
+  console.log("⚠️ Redis load error (using defaults):", e.message);
+}).finally(function() {
+  // Always start server whether Redis worked or not
+  app.listen(PORT, () => {
+    console.log("✅ Epewon Pro → http://localhost:" + PORT);
   });
 });
