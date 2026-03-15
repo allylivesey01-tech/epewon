@@ -49,12 +49,24 @@ app.use(function(req, res, next) {
   next();
 });
 
-const sessions = {};
+// File-based sessions — survive Render restarts and spin-downs
+const SESS_FILE = path.join(DATA, 'sessions.json');
+function loadSessions() {
+  try { if (fs.existsSync(SESS_FILE)) return JSON.parse(fs.readFileSync(SESS_FILE, 'utf8')); } catch(e) {}
+  return {};
+}
+function saveSessions(s) {
+  try { fs.writeFileSync(SESS_FILE, JSON.stringify(s)); } catch(e) {}
+}
 function makeToken() { return uid()+uid()+uid(); }
 function checkSession(req) {
   const token = req.cookies && req.cookies.ep_sess;
-  if (!token || !sessions[token]) return false;
-  if (Date.now() - sessions[token].createdAt > 86400000) { delete sessions[token]; return false; }
+  if (!token) return false;
+  const sessions = loadSessions();
+  if (!sessions[token]) return false;
+  if (Date.now() - sessions[token].createdAt > 86400000) {
+    delete sessions[token]; saveSessions(sessions); return false;
+  }
   return true;
 }
 function ipAllowed(req) {
@@ -271,7 +283,9 @@ app.post("/auth/login", async (req, res) => {
 
   if (username === auth.username && password === auth.password) {
     const token = makeToken();
+    const sessions = loadSessions();
     sessions[token] = { createdAt: Date.now() };
+    saveSessions(sessions);
     logEntry.success = true; logEntry.reason = "Login successful";
     saveLoginLog(logEntry);
     res.setHeader("Set-Cookie", "ep_sess="+token+"; HttpOnly; Path=/; Max-Age=86400; SameSite=Lax");
@@ -283,7 +297,7 @@ app.post("/auth/login", async (req, res) => {
 });
 app.post("/auth/logout", (req, res) => {
   const token = req.cookies && req.cookies.ep_sess;
-  if (token) delete sessions[token];
+  if (token) { const s = loadSessions(); delete s[token]; saveSessions(s); }
   res.setHeader("Set-Cookie", "ep_sess=; HttpOnly; Path=/; Max-Age=0");
   res.json({ ok:true });
 });
