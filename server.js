@@ -30,23 +30,29 @@ function getPublicUrl(req) {
   return detectedBaseUrl;
 }
 
-// ── Simple file storage ───────────────────────────────────────────────────────
-const DATA = path.join(__dirname, "data");
-if (!fs.existsSync(DATA)) fs.mkdirSync(DATA, { recursive: true });
+// ── Simple file storage (saves in app folder, persists between restarts) ────
+const F_SETTINGS = path.join(__dirname, "data_settings.json");
+const F_SCRIPTS  = path.join(__dirname, "data_scripts.json");
+const F_LOGS     = path.join(__dirname, "data_logs.json");
+const F_AUTH     = path.join(__dirname, "data_auth.json");
+const F_LOGINLOG = path.join(__dirname, "data_loginlogs.json");
 
-function readFile(name, def) {
-  try {
-    const f = path.join(DATA, name + ".json");
-    if (fs.existsSync(f)) return JSON.parse(fs.readFileSync(f, "utf8"));
-  } catch(e) {}
-  return def;
+function fileRead(f) {
+  try { if (fs.existsSync(f)) return JSON.parse(fs.readFileSync(f, "utf8")); } catch(e) {}
+  return null;
 }
-function writeFile(name, val) {
-  try { fs.writeFileSync(path.join(DATA, name + ".json"), JSON.stringify(val)); } catch(e) { console.error("Write error:", e.message); }
+function fileWrite(f, v) {
+  try { fs.writeFileSync(f, JSON.stringify(v)); } catch(e) { console.error("Write failed:", f, e.message); }
 }
 
-async function storeGet(key) { return readFile(key, null); }
-async function storeSet(key, val) { writeFile(key, val); }
+async function storeGet(key) {
+  const map = {settings:F_SETTINGS,scripts:F_SCRIPTS,logs:F_LOGS,auth:F_AUTH,login_logs:F_LOGINLOG};
+  return fileRead(map[key] || path.join(__dirname, "data_"+key+".json"));
+}
+async function storeSet(key, val) {
+  const map = {settings:F_SETTINGS,scripts:F_SCRIPTS,logs:F_LOGS,auth:F_AUTH,login_logs:F_LOGINLOG};
+  fileWrite(map[key] || path.join(__dirname, "data_"+key+".json"), val);
+}
 
 const DEF_AUTH = { username:"admin", password:"epewon2024", ipRestriction:{ enabled:false, allowedIPs:[], blockedCountries:[], allowedCountries:[] } };
 // Sync auth cache - loaded at startup and kept in memory
@@ -550,21 +556,7 @@ app.post("/twiml/status",(req,res)=>{
 
 // Start server immediately - never block on Redis
 const PORT = process.env.PORT || 3000;
-// Load ALL data from Redis FIRST, then open port
-// This way when the browser requests /api/settings, data is already loaded
-Promise.all([
-  loadAuthAsync(),
-  loadSettingsAsync(),
-  loadScriptsAsync(),
-  loadLogsAsync(),
-  loadLoginLogsAsync()
-]).then(function() {
-  console.log("✅ Redis data loaded");
-}).catch(function(e) {
-  console.log("⚠️ Redis load error (using defaults):", e.message);
-}).finally(function() {
-  // Always start server whether Redis worked or not
-  app.listen(PORT, () => {
-    console.log("✅ Epewon Pro → http://localhost:" + PORT);
-  });
+// Simple startup - file reads are synchronous, data is ready immediately
+app.listen(PORT, () => {
+  console.log("\n✅ Epewon Pro → http://localhost:" + PORT + "\n");
 });
