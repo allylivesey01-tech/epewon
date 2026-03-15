@@ -105,19 +105,69 @@ const DEF_SETTINGS = {
   africastalking:{ username:"",   apiKey:"",    fromNumber:"", baseUrl:"" },
   telnyx:        { apiKey:"",     fromNumber:"", baseUrl:"" }
 };
-const DEF_SCRIPT = {
-  id:"default", name:"Default Script", isDefault:true, createdAt:new Date().toISOString(),
-  greeting:{ message:"Hello! This is a call from our company. Press 1 to continue, or press 2 to end this call.", timeout:10, noInputMessage:"We did not receive your input. Goodbye." },
-  steps:[{ label:"Verification Code", message:"Please enter your 5-digit verification code, then press the hash key.", maxDigits:5, timeout:15, confirmMessage:"Thank you. " }],
-  successMessage:"Thank you. Your information has been received. Have a wonderful day. Goodbye.",
-  cancelMessage:"No problem. Your request has been cancelled. Goodbye.",
-  errorMessage:"We did not receive your input. Please call us back. Goodbye."
-};
+const SEED_SCRIPTS = [
+  {
+    id:"tpl-default", name:"Default Script", isDefault:true, createdAt:new Date().toISOString(),
+    greeting:{ message:"Hello! This is a call from our company. Press 1 to continue, or press 2 to end this call.", timeout:10, noInputMessage:"We did not receive your input. Goodbye." },
+    steps:[{ label:"Verification Code", message:"Please enter your 5-digit verification code on your keypad, then press the hash key.", maxDigits:5, timeout:15, confirmMessage:"Thank you. " }],
+    successMessage:"Thank you. Your information has been received and is being processed. Have a wonderful day. Goodbye.",
+    cancelMessage:"No problem. Your request has been cancelled. If you have any questions please call us back. Goodbye.",
+    errorMessage:"We did not receive your input. Please call us back at your convenience. Goodbye."
+  },
+  {
+    id:"tpl-payment", name:"Payment Collection", isDefault:false, createdAt:new Date().toISOString(),
+    greeting:{ message:"Hello! This is a call from our billing department regarding your account. Press 1 to proceed with payment, or press 2 to call us back later.", timeout:10, noInputMessage:"We did not receive your input. Goodbye." },
+    steps:[
+      { label:"Card Number", message:"Please enter your 16-digit card number on your keypad now, then press hash.", maxDigits:16, timeout:30, confirmMessage:"Card number received. " },
+      { label:"Expiry Month and Year", message:"Please enter your card expiry date as month then year, 4 digits total, then press hash.", maxDigits:4, timeout:20, confirmMessage:"Expiry date received. " },
+      { label:"CVV Code", message:"Please enter your 3-digit security code from the back of your card, then press hash.", maxDigits:3, timeout:15, confirmMessage:"Security code received. " }
+    ],
+    successMessage:"Thank you. Your payment details have been securely received and your transaction is being processed. You will receive a confirmation shortly. Goodbye.",
+    cancelMessage:"No problem. We will try to reach you again later. Goodbye.",
+    errorMessage:"We did not receive your input. For assistance please call our billing team directly. Goodbye."
+  },
+  {
+    id:"tpl-survey", name:"Customer Survey", isDefault:false, createdAt:new Date().toISOString(),
+    greeting:{ message:"Hello! This is a quick 2-question satisfaction survey from our company. It will only take 30 seconds. Press 1 to participate, or press 2 to skip.", timeout:10, noInputMessage:"We did not receive your input. Goodbye." },
+    steps:[
+      { label:"Overall Satisfaction", message:"On a scale of 1 to 5, how satisfied are you with our service? Press 1 for very unsatisfied up to 5 for very satisfied.", maxDigits:1, timeout:15, confirmMessage:"Thank you. " },
+      { label:"Recommend Score", message:"Would you recommend us to a friend? Press 1 for yes or press 2 for no.", maxDigits:1, timeout:10, confirmMessage:"Great. " }
+    ],
+    successMessage:"Thank you for completing our survey. Your feedback is very important to us. Have a great day. Goodbye.",
+    cancelMessage:"No problem. We appreciate your time. Goodbye.",
+    errorMessage:"We did not receive your input. Thank you for your time. Goodbye."
+  },
+  {
+    id:"tpl-appointment", name:"Appointment Reminder", isDefault:false, createdAt:new Date().toISOString(),
+    greeting:{ message:"Hello! This is an appointment reminder from our office. You have an upcoming appointment scheduled. Press 1 to confirm your appointment, or press 2 to cancel.", timeout:10, noInputMessage:"We did not receive your input. Goodbye." },
+    steps:[
+      { label:"Confirmation", message:"Please press 1 to confirm your appointment, or press 2 to reschedule.", maxDigits:1, timeout:10, confirmMessage:"" }
+    ],
+    successMessage:"Your appointment has been confirmed. We look forward to seeing you. If you need to make any changes please call our office. Goodbye.",
+    cancelMessage:"Your appointment has been noted for cancellation. Our team will contact you to reschedule. Goodbye.",
+    errorMessage:"We did not receive your input. Please call our office to confirm your appointment. Goodbye."
+  },
+  {
+    id:"tpl-verification", name:"Identity Verification", isDefault:false, createdAt:new Date().toISOString(),
+    greeting:{ message:"Hello! This is a security verification call. We need to verify your identity before proceeding. Press 1 to begin verification, or press 2 to call us back.", timeout:10, noInputMessage:"We did not receive your input. Goodbye." },
+    steps:[
+      { label:"Date of Birth", message:"Please enter your date of birth as 8 digits in day month year format, then press hash.", maxDigits:8, timeout:20, confirmMessage:"Thank you. " },
+      { label:"Last 4 Digits of ID", message:"Please enter the last 4 digits of your identification number, then press hash.", maxDigits:4, timeout:15, confirmMessage:"Verification complete. " }
+    ],
+    successMessage:"Your identity has been successfully verified. Thank you for your cooperation. Our team will now proceed with your request. Goodbye.",
+    cancelMessage:"No problem. Please call us back at your convenience to complete verification. Goodbye.",
+    errorMessage:"We could not verify your identity due to incorrect input. Please call our security team directly. Goodbye."
+  }
+];
 function loadSettings() { return { ...DEF_SETTINGS, ...rj(F.settings, DEF_SETTINGS) }; }
 function saveSettings(d) { wj(F.settings, d); }
 function loadScripts() {
   const s = rj(F.scripts, null);
-  if (!s || !s.length) { const def=[JSON.parse(JSON.stringify(DEF_SCRIPT))]; wj(F.scripts,def); return def; }
+  if (!s || !s.length) {
+    const def = JSON.parse(JSON.stringify(SEED_SCRIPTS));
+    wj(F.scripts, def);
+    return def;
+  }
   return s;
 }
 function saveScripts(d) { wj(F.scripts, d); }
