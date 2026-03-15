@@ -56,13 +56,6 @@ input,select,textarea{font-family:var(--body)}
   pointer-events:none;
 }
 
-/* Robot art SVG in sidebar bottom */
-.robot-art{
-  position:absolute;bottom:0;left:0;right:0;
-  opacity:0.08;pointer-events:none;
-  display:flex;justify-content:center;padding-bottom:10px;
-}
-
 .logo{
   padding:20px 20px 16px;
   border-bottom:1px solid rgba(0,180,220,0.15);
@@ -535,49 +528,6 @@ input,select,textarea{font-family:var(--body)}
 
 <!-- ═══ SIDEBAR ═══ -->
 <aside class="sidebar">
-
-  <!-- Robot art background -->
-  <div class="robot-art">
-    <svg width="220" height="280" viewBox="0 0 220 280" fill="none">
-      <!-- Robot head -->
-      <rect x="60" y="20" width="100" height="80" rx="12" stroke="white" stroke-width="1.5"/>
-      <!-- Eyes -->
-      <circle cx="85" cy="50" r="12" stroke="white" stroke-width="1.5"/>
-      <circle cx="135" cy="50" r="12" stroke="white" stroke-width="1.5"/>
-      <circle cx="85" cy="50" r="5" fill="white" opacity="0.5"/>
-      <circle cx="135" cy="50" r="5" fill="white" opacity="0.5"/>
-      <!-- Mouth panel -->
-      <rect x="78" y="72" width="64" height="16" rx="3" stroke="white" stroke-width="1"/>
-      <line x1="88" y1="72" x2="88" y2="88" stroke="white" stroke-width="0.8"/>
-      <line x1="100" y1="72" x2="100" y2="88" stroke="white" stroke-width="0.8"/>
-      <line x1="112" y1="72" x2="112" y2="88" stroke="white" stroke-width="0.8"/>
-      <line x1="124" y1="72" x2="124" y2="88" stroke="white" stroke-width="0.8"/>
-      <!-- Antenna -->
-      <line x1="110" y1="20" x2="110" y2="4" stroke="white" stroke-width="1.5"/>
-      <circle cx="110" cy="4" r="3" fill="white" opacity="0.6"/>
-      <!-- Neck -->
-      <rect x="95" y="100" width="30" height="14" rx="3" stroke="white" stroke-width="1"/>
-      <!-- Body -->
-      <rect x="40" y="114" width="140" height="100" rx="12" stroke="white" stroke-width="1.5"/>
-      <!-- Chest panels -->
-      <rect x="60" y="128" width="40" height="30" rx="5" stroke="white" stroke-width="1"/>
-      <rect x="120" y="128" width="40" height="30" rx="5" stroke="white" stroke-width="1"/>
-      <!-- Center panel -->
-      <rect x="90" y="134" width="40" height="50" rx="5" stroke="white" stroke-width="1"/>
-      <circle cx="110" cy="159" r="10" stroke="white" stroke-width="1"/>
-      <circle cx="110" cy="159" r="4" fill="white" opacity="0.3"/>
-      <!-- Arms -->
-      <rect x="4" y="120" width="32" height="70" rx="10" stroke="white" stroke-width="1.5"/>
-      <rect x="184" y="120" width="32" height="70" rx="10" stroke="white" stroke-width="1.5"/>
-      <!-- Legs -->
-      <rect x="55" y="214" width="38" height="60" rx="8" stroke="white" stroke-width="1.5"/>
-      <rect x="127" y="214" width="38" height="60" rx="8" stroke="white" stroke-width="1.5"/>
-      <!-- Circuit lines -->
-      <line x1="40" y1="145" x2="4" y2="145" stroke="white" stroke-width="0.8" stroke-dasharray="3 3"/>
-      <line x1="180" y1="145" x2="216" y2="145" stroke="white" stroke-width="0.8" stroke-dasharray="3 3"/>
-    </svg>
-  </div>
-
   <div class="logo">
     <div class="logo-row">
       <div class="logo-icon">
@@ -694,6 +644,8 @@ input,select,textarea{font-family:var(--body)}
     <button class="tab" onclick="switchTab('scripts',this)">📋 Scripts</button>
     <button class="tab" onclick="switchTab('logs',this)">📁 Logs</button>
     <button class="tab" onclick="switchTab('settings',this)">⚙️ Settings</button>
+    <button class="tab" onclick="switchTab('security',this)">🔐 Security</button>
+    <button class="tab" style="margin-left:auto;color:var(--red)" onclick="doLogout()">⏻ Logout</button>
   </div>
 
   <!-- MONITOR -->
@@ -873,6 +825,66 @@ input,select,textarea{font-family:var(--body)}
       <span class="saved-ok" id="settings-saved">✓ Saved!</span>
     </div>
   </div>
+  <!-- SECURITY -->
+  <div id="panel-security" class="panel">
+    <div class="ph"><div><div class="ph-title">Security</div><div class="ph-sub">Login credentials and IP access control</div></div></div>
+
+    <!-- Login credentials -->
+    <div class="cfg-sec">
+      <div class="cfg-title">Login Credentials</div>
+      <div class="cfg-grid">
+        <div class="cf"><label>Username</label><input type="text" id="sec-user" placeholder="admin"/></div>
+        <div class="cf"><label>New Password</label><input type="password" id="sec-pass" placeholder="Leave blank to keep current"/><span class="note">Leave blank to keep your existing password unchanged.</span></div>
+      </div>
+    </div>
+
+    <!-- IP Restriction -->
+    <div class="cfg-sec">
+      <div class="cfg-title">IP Access Restriction</div>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.6">
+        When enabled, only the IP addresses you list below can access this dashboard.
+        You can enter single IPs (e.g. <code style="background:var(--panel2);padding:1px 5px;border-radius:3px">102.89.23.4</code>) or IP ranges in CIDR format (e.g. <code style="background:var(--panel2);padding:1px 5px;border-radius:3px">102.89.0.0/16</code>).
+      </p>
+      <div class="cfg-grid">
+        <div class="cf cfg-full" style="flex-direction:row;align-items:center;gap:12px">
+          <label style="white-space:nowrap">Enable IP Restriction</label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="sec-ip-enabled" style="width:16px;height:16px;accent-color:var(--cyan2)"/>
+            <span style="font-size:13px;color:var(--text2)" id="ip-status-txt">Currently OFF</span>
+          </label>
+        </div>
+        <div class="cf cfg-full">
+          <label>Allowed IP Addresses (one per line)</label>
+          <textarea id="sec-ips" rows="5" style="background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text);font-size:13px;outline:none;resize:vertical;font-family:var(--mono)" placeholder="102.89.23.4&#10;41.58.0.0/16&#10;197.210.0.0/16"></textarea>
+        </div>
+      </div>
+
+      <!-- Emergency access - server only -->
+      <div style="margin-top:14px;padding:16px;background:rgba(255,171,0,0.06);border:1px solid rgba(255,171,0,0.2);border-radius:10px">
+        <div style="font-size:14px;font-weight:700;color:var(--amber);margin-bottom:8px">⚠️ Emergency Access (Lockout Recovery)</div>
+        <p style="font-size:13px;color:var(--text2);line-height:1.8">
+          If you ever lock yourself out due to IP restriction, you cannot fix it from this page 
+          (you'd need to be logged in already). Instead, use your <strong style="color:var(--text)">Render Shell</strong>:
+        </p>
+        <div style="margin-top:12px;background:var(--dark2);border-radius:8px;padding:12px 16px;font-family:var(--mono);font-size:12px">
+          <div style="color:var(--text3);margin-bottom:8px"># Step 1 — disable IP check (run in Render Shell)</div>
+          <div style="color:var(--cyan2)">touch data/bypass.txt</div>
+          <div style="color:var(--text3);margin:10px 0 6px"># Step 2 — after fixing IPs in Settings, remove the bypass</div>
+          <div style="color:var(--cyan2)">rm data/bypass.txt</div>
+        </div>
+        <p style="font-size:12px;color:var(--text3);margin-top:10px;line-height:1.6">
+          To open Render Shell: go to <strong style="color:var(--text)">render.com</strong> → your service → click <strong style="color:var(--text)">Shell</strong> in the left sidebar. 
+          Only you can do this — it requires your Render account login. No one else can bypass IP restriction this way.
+        </p>
+      </div>
+    </div>
+
+    <div class="save-row">
+      <button class="btn-save" onclick="saveSecurity()">💾 Save Security Settings</button>
+      <span class="saved-ok" id="security-saved">✓ Saved!</span>
+    </div>
+  </div>
+
 </main>
 </div>
 
@@ -907,6 +919,7 @@ function switchTab(id, btn) {
   document.getElementById('panel-' + id).classList.add('active');
   btn.classList.add('active');
   if (id === 'logs') loadLogs();
+  if (id === 'security') loadSecurityUI();
 }
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
@@ -1037,15 +1050,29 @@ function autoDetect(id) { document.getElementById(id).value = window.location.or
 // ─── Scripts ──────────────────────────────────────────────────────────────────
 function loadScriptsUI() {
   fetch('/api/scripts').then(function(r){ return r.json(); }).then(function(s) {
+    // If server returned empty array (shouldn't happen but safety net)
+    if (!s || !s.length) {
+      // Retry once after 1 second
+      setTimeout(function(){
+        fetch('/api/scripts').then(function(r2){ return r2.json(); }).then(function(s2){
+          scripts = s2 && s2.length ? s2 : [{id:'default',name:'Default Script',isDefault:true,steps:[],greeting:{message:'',timeout:10,noInputMessage:''},successMessage:'',cancelMessage:'',errorMessage:''}];
+          renderScriptLib();
+          renderScriptSelect();
+          loadScriptEditor(scripts[0]);
+        });
+      }, 1000);
+      return;
+    }
     scripts = s;
     renderScriptLib();
     renderScriptSelect();
-    // Always load the default script into the editor on first load
     var def = scripts.find(function(x){ return x.isDefault; }) || scripts[0];
     if (def) {
       editingId = def.id;
       loadScriptEditor(def);
     }
+  }).catch(function(e){
+    console.error('Script load error:', e);
   });
 }
 
@@ -1516,11 +1543,49 @@ function showSaved(id) {
   setTimeout(function(){ el.classList.remove('show'); }, 2500);
 }
 
+// ─── Security ─────────────────────────────────────────────────────────────────
+function loadSecurityUI() {
+  fetch('/api/auth').then(function(r){ return r.json(); }).then(function(a) {
+    document.getElementById('sec-user').value = a.username || '';
+    var ipr = a.ipRestriction || {};
+    document.getElementById('sec-ip-enabled').checked = !!ipr.enabled;
+    document.getElementById('ip-status-txt').textContent = ipr.enabled ? 'Currently ON' : 'Currently OFF';
+    document.getElementById('sec-ips').value = (ipr.allowedIPs || []).join('\n');
+  }).catch(function(){});
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('sec-ip-enabled').addEventListener('change', function() {
+    document.getElementById('ip-status-txt').textContent = this.checked ? 'Currently ON' : 'Currently OFF';
+  });
+});
+
+function saveSecurity() {
+  var payload = {
+    username: document.getElementById('sec-user').value.trim(),
+    password: document.getElementById('sec-pass').value || '••••',
+    ipRestriction: {
+      enabled: document.getElementById('sec-ip-enabled').checked,
+      allowedIPs: document.getElementById('sec-ips').value.split('\n').map(function(s){ return s.trim(); }).filter(Boolean)
+    }
+  };
+  fetch('/api/auth', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(payload)
+  }).then(function(){ showSaved('security-saved'); });
+}
+
+function doLogout() {
+  fetch('/auth/logout', {method:'POST'}).then(function(){ window.location.href = '/login'; });
+}
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 loadSettingsUI();
 loadScriptsUI();
 pollSessions();
 setInterval(pollSessions, 2000);
+// Load security settings in background
+setTimeout(loadSecurityUI, 500);
 </script>
 </body>
 </html>
